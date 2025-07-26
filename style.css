@@ -187,10 +187,11 @@ body {
     color: #333;
 }
 
-#user-buttons-container {
+#user-buttons-container, #file-buttons-container {
     margin-top: 20px;
     display: flex;
-    gap: 15px;
+    flex-direction: column;
+    gap: 10px;
     justify-content: center;
 }
 

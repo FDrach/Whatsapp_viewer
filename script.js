@@ -3,8 +3,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileInput = document.getElementById('chat-file');
     const chatContainer = document.getElementById('chat-container');
     const loadingIndicator = document.getElementById('loading-indicator');
-    const modal = document.getElementById('user-selection-modal');
-    const userButtonsContainer = document.getElementById('user-buttons-container');
 
     // --- Core State ---
     let allMessages = [];
@@ -39,7 +37,8 @@ document.addEventListener('DOMContentLoaded', () => {
         allMessages = [];
         mediaFileEntries.clear();
         zipFile = null;
-        modal.classList.add('hidden');
+        document.getElementById('user-selection-modal').classList.add('hidden');
+        document.getElementById('file-selection-modal').classList.add('hidden');
     }
 
     async function handleFileSelect(event) {
@@ -52,8 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             zipFile = await JSZip.loadAsync(file);
-            const chatFile = zipFile.file('_chat.txt');
-            if (!chatFile) throw new Error('_chat.txt not found.');
+            const chatFile = await findChatFile(zipFile, file.name);
 
             zipFile.forEach((relativePath, zipEntry) => {
                 if (!zipEntry.dir) mediaFileEntries.set(zipEntry.name, zipEntry);
@@ -62,58 +60,111 @@ document.addEventListener('DOMContentLoaded', () => {
             const chatText = await chatFile.async('string');
             const participants = parseAllMessages(chatText);
             
-            // 1. Prompt user for their name, and wait for their selection
-            const mainUser = await promptForUserSelection(participants);
-
-            // 2. Once selected, assign message types based on their choice
+            const mainUser = await promptForUser(participants);
+            
             allMessages.forEach(msg => {
                 if (msg.sender && msg.sender !== 'System') {
                     msg.type = msg.sender.toLowerCase() === mainUser.toLowerCase() ? 'outgoing' : 'incoming';
                 }
             });
             
-            // 3. Render the chat
             await initializeChatView();
 
         } catch (error) {
-            console.error('Error processing zip file:', error);
-            alert('Could not process the zip file.');
+            console.error('File processing error:', error);
+            alert(`Error: ${error.message}`);
         } finally {
             loadingIndicator.classList.add('hidden');
         }
     }
     
-    function promptForUserSelection(participants) {
+    // --- NEW: Simplified and Direct Prompt Functions ---
+    function promptForUser(participants) {
+        const modal = document.getElementById('user-selection-modal');
+        const buttonContainer = document.getElementById('user-buttons-container');
+        const options = Array.from(participants);
+        
         return new Promise((resolve) => {
-            userButtonsContainer.innerHTML = ''; // Clear old buttons
-            
-            // Take the first 2 (or 1 if it's a solo chat) participants
-            const usersToShow = Array.from(participants).slice(0, 2);
-
-            if (usersToShow.length === 0) {
-                // If no senders found, resolve with a dummy value to prevent hanging
-                resolve(null);
+            buttonContainer.innerHTML = '';
+            if (options.length <= 1) {
+                resolve(options[0] || null); // Auto-select if 1 or 0 participants
                 return;
             }
-            if(usersToShow.length === 1) {
-                // If only one person ever talked, just resolve with their name
-                resolve(usersToShow[0]);
-                return;
-            }
-
-            usersToShow.forEach(name => {
+            // Show only the first 2 participants for a standard 1-on-1 chat selection
+            options.slice(0, 2).forEach(name => {
                 const button = document.createElement('button');
                 button.className = 'user-button';
                 button.textContent = name;
                 button.onclick = () => {
                     modal.classList.add('hidden');
-                    resolve(name); // Resolve the promise with the selected name
+                    resolve(name);
                 };
-                userButtonsContainer.appendChild(button);
+                buttonContainer.appendChild(button);
             });
-
             modal.classList.remove('hidden');
         });
+    }
+
+    function promptForFile(fileOptions) {
+        const modal = document.getElementById('file-selection-modal');
+        const buttonContainer = document.getElementById('file-buttons-container');
+
+        return new Promise((resolve) => {
+            buttonContainer.innerHTML = '';
+            fileOptions.forEach(fileName => {
+                const button = document.createElement('button');
+                button.className = 'user-button';
+                button.textContent = fileName;
+                button.onclick = () => {
+                    modal.classList.add('hidden');
+                    resolve(fileName);
+                };
+                buttonContainer.appendChild(button);
+            });
+            modal.classList.remove('hidden');
+        });
+    }
+
+    async function findChatFile(zip, zipFilename) {
+        let chatFile = zip.file('_chat.txt');
+        if (chatFile) return chatFile;
+
+        const zipNameAsTxt = zipFilename.replace(/\.zip$/i, '.txt');
+        chatFile = zip.file(zipNameAsTxt);
+        if (chatFile) return chatFile;
+
+        const textFiles = zip.filter((path, entry) => path.toLowerCase().endsWith('.txt') && !entry.dir);
+        if (textFiles.length === 0) throw new Error('No .txt files found in the zip archive.');
+        if (textFiles.length === 1) return textFiles[0];
+
+        const chatNamedFiles = textFiles.filter(f => f.name.toLowerCase().includes('chat'));
+        if (chatNamedFiles.length === 1) return chatNamedFiles[0];
+        
+        const filesToValidate = chatNamedFiles.length > 0 ? chatNamedFiles : textFiles;
+        const validChatFiles = [];
+        for (const f of filesToValidate) {
+            if (await isValidChatFormat(f)) {
+                validChatFiles.push(f);
+            }
+        }
+
+        if (validChatFiles.length === 0) throw new Error('Could not find a valid WhatsApp chat file.');
+        if (validChatFiles.length === 1) return validChatFiles[0];
+
+        // Last resort: prompt the user
+        const selectedFileName = await promptForFile(validChatFiles.map(f => f.name));
+        return zip.file(selectedFileName);
+    }
+
+    async function isValidChatFormat(fileEntry) {
+        try {
+            const content = await fileEntry.async('string');
+            const lines = content.split('\n').slice(0, 10);
+            const messageStartRegex = /^\d{1,2}\/\d{1,2}\/\d{4},/;
+            return lines.some(line => messageStartRegex.test(line));
+        } catch (e) {
+            return false;
+        }
     }
 
     function parseAllMessages(text) {
@@ -134,9 +185,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (senderMatch) {
                     const sender = senderMatch[1];
-                    participants.add(sender); // Add sender to our set
+                    participants.add(sender);
                     const content = messageBody.substring(sender.length + 2);
-                    currentMessage = { sender, content, time, type: '' }; // Type is set later
+                    currentMessage = { sender, content, time, type: '' };
                 } else {
                     currentMessage = { sender: 'System', content: messageBody, time: '', type: 'system' };
                 }
@@ -149,8 +200,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function initializeChatView() {
-        // This function and all subsequent rendering functions are the same as before
-        // They just rely on the `msg.type` property which is now correctly set.
         const totalBatches = Math.ceil(allMessages.length / BATCH_SIZE);
         const initialBatchIndex = Math.max(0, totalBatches - 1);
         

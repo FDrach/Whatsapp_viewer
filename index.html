@@ -17,7 +17,6 @@
             <div id="loading-indicator" class="hidden">Processing... please wait.</div>
         </div>
         <div id="chat-container">
-        <div id="spinner" class="spinner"></div>
             <div class="placeholder">
                 <img src="/logo.svg" alt="WhatsApp Icon" width="75">
                 <h2>Waiting for chat</h2>
@@ -26,10 +25,16 @@
     </div>
     <div id="user-selection-modal" class="modal-overlay hidden">
         <div class="modal-content">
-            <h2>Who are you in this chat?</h2>
-            <p>Select your name to style your messages correctly.</p>
-            <div id="user-buttons-container">
-            </div>
+            <h2 id="user-modal-title">Who are you in this chat?</h2>
+            <p id="user-modal-text">Select your name to style your messages correctly.</p>
+            <div id="user-buttons-container"></div>
+        </div>
+    </div>
+    <div id="file-selection-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h2 id="file-modal-title">Multiple Chat Files Found</h2>
+            <p id="file-modal-text">Please select the correct chat file to display.</p>
+            <div id="file-buttons-container"></div>
         </div>
     </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>

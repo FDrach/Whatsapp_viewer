@@ -10,10 +10,6 @@
     <div id="app-container">
         <div id="controls-container">
             <h1>WhatsApp Chat Viewer</h1>
-            <p>
-                On your phone, export your WhatsApp chat by choosing <strong>"Include Media"</strong>.
-                Then, upload the resulting <strong>.zip</strong> file below.
-            </p>
             <div class="input-group">
                  <label for="chat-file">Upload your exported .zip file:</label>
                 <input type="file" id="chat-file" accept=".zip">
@@ -21,10 +17,10 @@
             <div id="loading-indicator" class="hidden">Processing... please wait.</div>
         </div>
         <div id="chat-container">
+        <div id="spinner" class="spinner"></div>
             <div class="placeholder">
-                <img src="https://i.imgur.com/bUnA9aM.png" alt="WhatsApp Icon" width="250">
-                <h2>Keep your phone connected</h2>
-                <p>WhatsApp connects to your phone to sync messages. To reduce data usage, connect your phone to Wi-Fi.</p>
+                <img src="/logo.svg" alt="WhatsApp Icon" width="75">
+                <h2>Waiting for chat</h2>
             </div>
         </div>
     </div>
@@ -33,7 +29,6 @@
             <h2>Who are you in this chat?</h2>
             <p>Select your name to style your messages correctly.</p>
             <div id="user-buttons-container">
-                <!--  -->
             </div>
         </div>
     </div>

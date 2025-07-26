@@ -13,7 +13,7 @@ body {
 #app-container {
     width: 95%;
     max-width: 800px;
-    height: 90vh;
+    height: 98vh;
     background-color: #f0f0f0;
     display: flex;
     flex-direction: column;
@@ -26,19 +26,19 @@ body {
 /* Controls Area at the top */
 #controls-container {
     background-color: #ededed;
-    padding: 20px;
+    padding: 5px;
     border-bottom: 1px solid #d1d1d1;
     text-align: center;
 }
 
 #controls-container h1 {
-    margin: 0 0 10px 0;
+    margin: 0;
     font-size: 24px;
     color: #075E54;
 }
 
 #controls-container p {
-    margin: 0 0 15px 0;
+    margin: 0;
     line-height: 1.5;
 }
 
@@ -49,7 +49,6 @@ body {
 }
 
 .input-group input {
-    padding: 8px;
     border-radius: 5px;
     border: 1px solid #ccc;
     width: 80%;

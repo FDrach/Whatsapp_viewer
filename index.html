@@ -9,13 +9,20 @@
 <body>
     <div id="app-container">
         <div id="controls-container">
-            <h1>WhatsApp Chat Viewer</h1>
-            <div class="input-group">
-                 <label for="chat-file">Upload your exported .zip file:</label>
-                <input type="file" id="chat-file" accept=".zip">
-            </div>
-            <div id="loading-indicator" class="hidden">Processing... please wait.</div>
+        <h1>WhatsApp Chat Viewer</h1>
+        <div class="input-group">
+             <label for="chat-file">Upload your exported .zip file:</label>
+            <input type="file" id="chat-file" accept=".zip">
         </div>
+        <div id="search-controls" class="hidden">
+            <input type="text" id="search-input" placeholder="Search in chat...">
+            <button id="search-button" title="Search">Search</button>
+            <button id="prev-result" title="Previous result" class="hidden">‹</button>
+            <span id="search-results-count"></span>
+            <button id="next-result" title="Next result" class="hidden">›</button>
+        </div>
+        <div id="loading-indicator" class="hidden">Processing... please wait.</div>
+    </div>
         <div id="chat-container">
             <div class="placeholder">
                 <img src="/logo.svg" alt="WhatsApp Icon" width="75">

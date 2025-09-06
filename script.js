@@ -3,12 +3,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileInput = document.getElementById('chat-file');
     const chatContainer = document.getElementById('chat-container');
     const loadingIndicator = document.getElementById('loading-indicator');
+    const searchControls = document.getElementById('search-controls');
+    const searchInput = document.getElementById('search-input');
+    const searchButton = document.getElementById('search-button');
+    const prevResultButton = document.getElementById('prev-result');
+    const nextResultButton = document.getElementById('next-result');
+    const searchResultsCount = document.getElementById('search-results-count');
 
     // --- Core State ---
     let allMessages = [];
     let mediaFileEntries = new Map();
     let zipFile = null;
     let renderedBatches = new Map();
+
+    // --- Search State ---
+    let searchResults = [];
+    let currentResultIndex = -1;
+    let currentSearchTerm = '';
 
     // --- Configuration ---
     const BATCH_SIZE = 50;
@@ -29,6 +40,13 @@ document.addEventListener('DOMContentLoaded', () => {
             scrollCheckScheduled = true;
         }
     });
+    searchButton.addEventListener('click', performSearch);
+    searchInput.addEventListener('keyup', (e) => {
+        if (e.key === 'Enter') performSearch();
+        if (e.key === 'Escape') clearSearch();
+    });
+    prevResultButton.addEventListener('click', goToPrevResult);
+    nextResultButton.addEventListener('click', goToNextResult);
     window.addEventListener('beforeunload', cleanup);
 
     function cleanup() {
@@ -39,6 +57,8 @@ document.addEventListener('DOMContentLoaded', () => {
         zipFile = null;
         document.getElementById('user-selection-modal').classList.add('hidden');
         document.getElementById('file-selection-modal').classList.add('hidden');
+        clearSearch(true); // Pass true to prevent DOM manipulation on closed window
+        searchControls.classList.add('hidden');
     }
 
     async function handleFileSelect(event) {
@@ -69,6 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             
             await initializeChatView();
+            searchControls.classList.remove('hidden');
 
         } catch (error) {
             console.error('File processing error:', error);
@@ -78,7 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    // --- NEW: Simplified and Direct Prompt Functions ---
+    // --- Simplified and Direct Prompt Functions ---
     function promptForUser(participants) {
         const modal = document.getElementById('user-selection-modal');
         const buttonContainer = document.getElementById('user-buttons-container');
@@ -200,6 +221,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function initializeChatView() {
+        chatContainer.innerHTML = '';
+        renderedBatches.forEach(batch => batch.blobUrls.forEach(URL.revokeObjectURL));
+        renderedBatches.clear();
+
         const totalBatches = Math.ceil(allMessages.length / BATCH_SIZE);
         const initialBatchIndex = Math.max(0, totalBatches - 1);
         
@@ -238,8 +263,10 @@ document.addEventListener('DOMContentLoaded', () => {
         batchContainer.dataset.batchIndex = batchIndex;
         const blobUrls = [];
 
-        for (const msg of messagesToRender) {
-            const { bubble, urls } = await createMessageBubble(msg);
+        for (let i = 0; i < messagesToRender.length; i++) {
+            const msg = messagesToRender[i];
+            const originalIndex = startIndex + i;
+            const { bubble, urls } = await createMessageBubble(msg, originalIndex);
             if (bubble) {
                 batchContainer.appendChild(bubble);
                 blobUrls.push(...urls);
@@ -270,11 +297,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function createMessageBubble(msg) {
+    async function createMessageBubble(msg, messageIndex) {
         if (msg.content.includes('<Multimedia omitido>')) return { bubble: null, urls: [] };
 
         const bubble = document.createElement('div');
         bubble.classList.add('message-bubble', msg.type);
+        bubble.dataset.messageIndex = messageIndex;
         const urls = [];
 
         if (msg.type === 'incoming') {
@@ -303,7 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             const textDiv = document.createElement('div');
             textDiv.classList.add('text-content');
-            textDiv.innerHTML = formatText(msg.content);
+            textDiv.innerHTML = formatText(msg.content, currentSearchTerm);
             bubble.appendChild(textDiv);
         }
         
@@ -334,21 +362,157 @@ document.addEventListener('DOMContentLoaded', () => {
             mediaElement.classList.add('media-attachment');
             mediaContainer.appendChild(mediaElement);
         } else {
-            mediaContainer.innerHTML = `<div class="file-attachment"><div class="file-icon"></div><span>${formatText(fileName)}</span></div>`;
+            mediaContainer.innerHTML = `<div class="file-attachment"><div class="file-icon"></div><span>${formatText(fileName, currentSearchTerm)}</span></div>`;
         }
         if (caption) {
             const captionDiv = document.createElement('div');
             captionDiv.classList.add('caption');
-            captionDiv.innerHTML = formatText(caption);
+            captionDiv.innerHTML = formatText(caption, currentSearchTerm);
             mediaContainer.appendChild(captionDiv);
         }
         return mediaContainer;
     }
 
-    function formatText(text) {
+    function formatText(text, searchTerm) {
+        let escapedText = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        
         const urlRegex = /(https?:\/\/[^\s]+)/g;
-        let formattedText = text.replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">");
-        formattedText = formattedText.replace(urlRegex, '<a href="$&" target="_blank" rel="noopener noreferrer">$&</a>');
-        return formattedText.replace(/\n/g, '<br>');
+        const urls = [];
+        let textWithPlaceholders = escapedText.replace(urlRegex, (url) => {
+            urls.push(url);
+            return `__URL_${urls.length - 1}__`;
+        });
+
+        if (searchTerm) {
+            const searchRegex = new RegExp(searchTerm.replace(/[.*+?^${}()|[\\]/g, '\\$&'), 'gi');
+            textWithPlaceholders = textWithPlaceholders.replace(searchRegex, match => `<span class="highlight">${match}</span>`);
+        }
+
+        let finalHtml = textWithPlaceholders.replace(/__URL_(\d+)__/g, (match, index) => {
+            const url = urls[parseInt(index, 10)];
+            return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+        });
+
+        return finalHtml.replace(/\n/g, '<br>');
+    }
+
+    // --- Search Implementation ---
+
+    function clearSearch(isCleanup = false) {
+        if (!currentSearchTerm && searchInput.value === '') return;
+
+        searchInput.value = '';
+        currentSearchTerm = '';
+        searchResults = [];
+        currentResultIndex = -1;
+        updateSearchResultUI();
+
+        if (isCleanup) return;
+
+        const currentHit = document.querySelector('.current-search-hit');
+        if (currentHit) currentHit.classList.remove('current-search-hit');
+
+        const highlights = document.querySelectorAll('.highlight');
+        highlights.forEach(el => {
+            const parent = el.parentNode;
+            while (el.firstChild) {
+                parent.insertBefore(el.firstChild, el);
+            }
+            parent.removeChild(el);
+        });
+    }
+
+    async function performSearch() {
+        const searchTerm = searchInput.value.trim();
+        if (searchTerm === '') {
+            clearSearch();
+            return;
+        }
+
+        currentSearchTerm = searchTerm;
+        searchResults = [];
+        allMessages.forEach((msg, index) => {
+            if (msg.content.toLowerCase().includes(currentSearchTerm.toLowerCase())) {
+                searchResults.push(index);
+            }
+        });
+
+        if (searchResults.length > 0) {
+            currentResultIndex = searchResults.length - 1; // Start at the last result
+            await navigateToResult(currentResultIndex);
+        } else {
+            const currentHit = document.querySelector('.current-search-hit');
+            if (currentHit) currentHit.classList.remove('current-search-hit');
+        }
+        updateSearchResultUI();
+    }
+
+    async function goToPrevResult() {
+        if (currentResultIndex > 0) {
+            currentResultIndex--;
+            await navigateToResult(currentResultIndex);
+            updateSearchResultUI();
+        }
+    }
+
+    async function goToNextResult() {
+        if (currentResultIndex < searchResults.length - 1) {
+            currentResultIndex++;
+            await navigateToResult(currentResultIndex);
+            updateSearchResultUI();
+        }
+    }
+
+    function updateSearchResultUI() {
+        if (searchResults.length > 0) {
+            searchResultsCount.textContent = `${currentResultIndex + 1} of ${searchResults.length}`;
+            prevResultButton.classList.remove('hidden');
+            nextResultButton.classList.remove('hidden');
+            prevResultButton.disabled = currentResultIndex === 0;
+            nextResultButton.disabled = currentResultIndex === searchResults.length - 1;
+        } else {
+            searchResultsCount.textContent = currentSearchTerm ? 'No results' : '';
+            prevResultButton.classList.add('hidden');
+            nextResultButton.classList.add('hidden');
+        }
+    }
+
+    async function navigateToResult(resultIndex) {
+        const messageIndex = searchResults[resultIndex];
+        const targetBatchIndex = Math.floor(messageIndex / BATCH_SIZE);
+
+        const oldHit = document.querySelector('.current-search-hit');
+        if (oldHit) oldHit.classList.remove('current-search-hit');
+
+        if (!renderedBatches.has(targetBatchIndex)) {
+            await jumpToBatch(targetBatchIndex);
+        }
+
+        await new Promise(resolve => requestAnimationFrame(resolve));
+
+        const messageElement = document.querySelector(`[data-message-index='${messageIndex}']`);
+        if (messageElement) {
+            messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            messageElement.classList.add('current-search-hit');
+        }
+    }
+
+    async function jumpToBatch(batchIndex) {
+        chatContainer.innerHTML = '';
+        renderedBatches.forEach(batch => batch.blobUrls.forEach(URL.revokeObjectURL));
+        renderedBatches.clear();
+
+        const totalBatches = Math.ceil(allMessages.length / BATCH_SIZE);
+        const startBatch = Math.max(0, batchIndex - 1);
+        const endBatch = Math.min(totalBatches - 1, batchIndex + 1);
+
+        for (let i = startBatch; i <= endBatch; i++) {
+            await loadBatch(i, 'append');
+        }
+        
+        const targetBatchElement = document.querySelector(`[data-batch-index='${batchIndex}']`);
+        if (targetBatchElement) {
+            chatContainer.scrollTop = targetBatchElement.offsetTop - chatContainer.offsetTop;
+        }
     }
 });
